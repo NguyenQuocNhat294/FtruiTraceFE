@@ -34,13 +34,16 @@ const ProductCard = ({ product, onClick, view }) => {
     const [imgError, setImgError] = useState(false);
     const [imgLoaded, setImgLoaded] = useState(false);
 
-    const parseFirst = (str) => {
+  // ✅ MỚI — thay vào
+const parseFirst = (str) => {
     if (!str) return null;
     const first = str.split(',')[0].trim();
     if (!first) return null;
     if (first.startsWith('http://') || first.startsWith('https://')) return first;
     return first.startsWith('/') ? first : `/${first}`;
-    
+};
+    const src = parseFirst(product.image);
+
     if (view === 'list') return (
         <div onClick={()=>onClick(product)}
              className="flex items-center gap-4 p-4 rounded-2xl cursor-pointer transition-all hover:bg-white/[0.04] group"
