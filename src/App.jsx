@@ -43,6 +43,7 @@ import QRGenerator     from "./pages/farm/QRGenerator";
 import GalleryPage     from "./pages/farm/GalleryPage";
 import RevenuePage     from "./pages/farm/RevenuePage";
 import StaffManagement from "./pages/farm/StaffManagement";
+import CreateBatch from './pages/farm/CreateBatch';
 
 /* ===== Staff ===== */
 import StaffDashboard   from "./pages/staff/StaffDashboard";
@@ -87,6 +88,7 @@ function App() {
                     <ProtectedRoute allowedRoles={["admin","farm","farmer"]}>
                         <FarmLayout />
                     </ProtectedRoute>
+
                 }>
                     <Route index                  element={<FarmDashboard />} />
                     <Route path="mybatches"        element={<MyBatches />} />
@@ -95,6 +97,7 @@ function App() {
                     <Route path="gallery"          element={<GalleryPage />} />
                     <Route path="revenue"          element={<RevenuePage />} />
                     <Route path="staff-management" element={<StaffManagement />} />
+                    <Route path="/farm/mybatches/create" element={<CreateBatch/>}/>
                 </Route>
 
                 {/* ── Staff ── */}

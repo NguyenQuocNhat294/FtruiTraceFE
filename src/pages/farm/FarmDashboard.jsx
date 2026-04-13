@@ -166,7 +166,7 @@ export default function FarmDashboard() {
                           style={{ background:'rgba(255,255,255,0.06)', border:`1px solid ${C.cardBorder}`, color:C.textHigh }}>
                         <Package size={15}/> Xem lô hàng
                     </Link>
-                    <Link to="/farm/qr"
+                    <Link to="/farm/mybatches/create"
                           className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:brightness-110"
                           style={{ background:'linear-gradient(135deg,#16a34a,#22c55e)', boxShadow:'0 4px 20px rgba(34,197,94,0.4)' }}>
                         <Plus size={16}/> Tạo lô hàng
@@ -345,7 +345,7 @@ export default function FarmDashboard() {
                                           style={{ background:C.skyDim, color:C.sky }}>
                                         <Eye size={13}/>
                                     </Link>
-                                    <Link to="/farm/qr"
+                                    <Link to="/farm/mybatches/create"
                                           className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
                                           style={{ background:'rgba(167,139,250,0.12)', color:C.violet }}>
                                         <QrCode size={13}/>
