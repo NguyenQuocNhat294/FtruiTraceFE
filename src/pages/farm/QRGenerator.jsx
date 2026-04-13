@@ -5,7 +5,9 @@ import {
     CheckCircle, ExternalLink, Search, Wifi, Smartphone, Info
 } from "lucide-react";
 import { batchService } from "../../services/batchService";
+import { farmService }  from "../../services/farmService";
 import { getPublicTraceUrl } from "../../utils/publicTraceUrl";
+import { useAuth } from "../../hooks/useAuth";
 
 const ENV_PUBLIC_BASE = import.meta.env.VITE_PUBLIC_APP_URL?.trim?.()?.replace(/\/$/, "");
 
@@ -17,6 +19,7 @@ const STATUS_INFO = {
 };
 
 export default function QRGenerator() {
+    const { user }                  = useAuth();
     const [batches, setBatches]     = useState([]);
     const [selected, setSelected]   = useState(null);
     const [search, setSearch]       = useState("");
@@ -29,17 +32,44 @@ export default function QRGenerator() {
     const imgRef                    = useRef();
 
     useEffect(() => {
-        batchService.getAll()
-            .then(r => {
-                setBatches(r.data || []);
-                if (r.data?.length > 0) setSelected(r.data[0]);
-            })
-            .catch(() => {})
-            .finally(() => setLoading(false));
+        const loadBatches = async () => {
+            if (!user) return;
+            setLoading(true);
+            try {
+                // 1. Lấy farms của farmer đang đăng nhập
+                const farmRes = await farmService.getAll();
+                const myFarms = (farmRes.data || []).filter(f =>
+                    f.OwnerId === user.id || f.OwnerId === user._id
+                );
+
+                if (myFarms.length === 0) {
+                    setBatches([]);
+                    return;
+                }
+
+                // 2. Lấy batch của từng farm, gộp lại
+                const batchResults = await Promise.all(
+                    myFarms.map(f =>
+                        batchService.getAll({ farmid: f.id || f._id })
+                            .catch(() => ({ data: [] }))
+                    )
+                );
+                const allBatches = batchResults.flatMap(r => r.data || []);
+
+                setBatches(allBatches);
+                if (allBatches.length > 0) setSelected(allBatches[0]);
+            } catch (e) {
+                console.error('QRGenerator load error:', e);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadBatches();
 
         // Cố lấy local IP từ WebRTC
         try {
-            const pc = new RTCPeerConnection({ iceServers:[] });
+            const pc = new RTCPeerConnection({ iceServers: [] });
             pc.createDataChannel('');
             pc.createOffer().then(o => pc.setLocalDescription(o));
             pc.onicecandidate = e => {
@@ -51,9 +81,9 @@ export default function QRGenerator() {
                 }
             };
         } catch {}
-    }, []);
+    }, [user?.id]);
 
-    // URL để quét QR: ưu tiên IP LAN (dev) → URL công khai env (deploy/ngrok) → origin hiện tại
+    // URL để quét QR
     const getTraceUrl = () => {
         const code = selected?.batchcode || '';
         if (useIP) {
@@ -72,12 +102,12 @@ export default function QRGenerator() {
         return getPublicTraceUrl(code);
     };
 
-    const traceUrl  = getTraceUrl();
-    const qrImgUrl  = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(traceUrl)}&bgcolor=ffffff&color=111827&qzone=2&format=png`;
+    const traceUrl = getTraceUrl();
+    const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(traceUrl)}&bgcolor=ffffff&color=111827&qzone=2&format=png`;
 
     const filtered = batches.filter(b =>
-        (b.batchcode||'').toLowerCase().includes(search.toLowerCase()) ||
-        (b.productid||'').toLowerCase().includes(search.toLowerCase())
+        (b.batchcode || '').toLowerCase().includes(search.toLowerCase()) ||
+        (b.productid || '').toLowerCase().includes(search.toLowerCase())
     );
 
     const handleCopy = async () => {
@@ -120,7 +150,7 @@ export default function QRGenerator() {
                             <p className="text-xs mb-3 py-2 px-3 rounded-lg leading-relaxed"
                                style={{ background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.2)', color:'#86efac' }}>
                                 <strong className="text-white">Link công khai:</strong> QR đang dùng <span className="font-mono">{ENV_PUBLIC_BASE}</span>
-                                — ai có Internet đều quét được (cần frontend + API đều truy cập được từ ngoài).
+                                — ai có Internet đều quét được.
                             </p>
                         )}
                         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
@@ -131,11 +161,11 @@ export default function QRGenerator() {
                                 <span className="text-xs" style={{ color:'rgba(255,255,255,0.5)' }}>
                                     {useIP ? 'Dùng IP nội bộ ✓' : 'Dùng IP nội bộ'}
                                 </span>
-                                <div onClick={()=>setUseIP(!useIP)}
+                                <div onClick={() => setUseIP(!useIP)}
                                      className="relative w-10 h-5 rounded-full transition-all cursor-pointer"
-                                     style={{ background:useIP?'#22c55e':'rgba(255,255,255,0.1)' }}>
+                                     style={{ background: useIP ? '#22c55e' : 'rgba(255,255,255,0.1)' }}>
                                     <div className="absolute top-0.5 transition-all duration-300 w-4 h-4 rounded-full bg-white shadow"
-                                         style={{ left:useIP?'22px':'2px' }}/>
+                                         style={{ left: useIP ? '22px' : '2px' }}/>
                                 </div>
                             </label>
                         </div>
@@ -143,9 +173,9 @@ export default function QRGenerator() {
                         {useIP ? (
                             <div className="flex gap-2 items-center">
                                 <span className="text-xs" style={{ color:'rgba(255,255,255,0.4)' }}>IP máy tính:</span>
-                                <input value={customIP||localIP}
-                                       onChange={e=>setCustomIP(e.target.value)}
-                                       placeholder={localIP||"192.168.1.8"}
+                                <input value={customIP || localIP}
+                                       onChange={e => setCustomIP(e.target.value)}
+                                       placeholder={localIP || "192.168.1.8"}
                                        className="flex-1 px-3 py-1.5 rounded-lg text-sm text-white font-mono focus:outline-none"
                                        style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(56,189,248,0.2)' }}/>
                                 <span className="text-xs font-mono" style={{ color:'rgba(255,255,255,0.3)' }}>:5173</span>
@@ -154,9 +184,9 @@ export default function QRGenerator() {
                             <p className="text-xs" style={{ color:'rgba(255,255,255,0.4)' }}>
                                 {!ENV_PUBLIC_BASE && (
                                     <>
-                                        Muốn <strong className="text-white">người ngoài</strong> quét được: deploy web + API lên hosting (hoặc ngrok) rồi đặt{' '}
+                                        Muốn <strong className="text-white">người ngoài</strong> quét được: deploy web + API lên hosting rồi đặt{' '}
                                         <span className="font-mono text-sky-300">VITE_PUBLIC_APP_URL</span> trong file env khi build.
-                                        <br />
+                                        <br/>
                                     </>
                                 )}
                                 Bật để điện thoại cùng WiFi scan được QR. IP tự động:{' '}
@@ -178,7 +208,7 @@ export default function QRGenerator() {
                             </h3>
                             <div className="relative">
                                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'rgba(255,255,255,0.3)' }}/>
-                                <input value={search} onChange={e=>setSearch(e.target.value)}
+                                <input value={search} onChange={e => setSearch(e.target.value)}
                                        placeholder="Tìm mã lô, sản phẩm..."
                                        className="w-full pl-8 pr-3 py-2 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none"
                                        style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)' }}/>
@@ -187,20 +217,26 @@ export default function QRGenerator() {
                         <div className="max-h-80 overflow-y-auto" style={{ scrollbarWidth:'none' }}>
                             {loading ? (
                                 <div className="p-6 text-center text-xs" style={{ color:'rgba(255,255,255,0.3)' }}>Đang tải...</div>
+                            ) : filtered.length === 0 ? (
+                                <div className="p-6 text-center text-xs" style={{ color:'rgba(255,255,255,0.3)' }}>
+                                    Không có lô hàng nào
+                                </div>
                             ) : filtered.map(batch => {
                                 const s = STATUS_INFO[batch.status] || STATUS_INFO.available;
                                 const active = selected?._id === batch._id;
                                 return (
-                                    <button key={batch._id} onClick={()=>setSelected(batch)}
+                                    <button key={batch._id} onClick={() => setSelected(batch)}
                                             className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
-                                            style={{ borderBottom:'1px solid rgba(255,255,255,0.04)', background:active?'rgba(34,197,94,0.06)':'transparent' }}>
+                                            style={{ borderBottom:'1px solid rgba(255,255,255,0.04)', background: active ? 'rgba(34,197,94,0.06)' : 'transparent' }}>
                                         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0"
                                              style={{ background:`linear-gradient(135deg,${s.color},${s.color}80)` }}>
-                                            {(batch.productid||'B').charAt(0).toUpperCase()}
+                                            {(batch.productid || 'B').charAt(0).toUpperCase()}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-xs font-bold text-white truncate">{batch.batchcode}</p>
-                                            <p className="text-[10px] truncate" style={{ color:'rgba(255,255,255,0.35)' }}>{batch.productid}</p>
+                                            <p className="text-[10px] truncate" style={{ color:'rgba(255,255,255,0.35)' }}>
+                                                {batch.productid} · {batch.farmid}
+                                            </p>
                                         </div>
                                         {active && <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background:'#22c55e' }}/>}
                                     </button>
@@ -217,12 +253,12 @@ export default function QRGenerator() {
                                 Thông tin lô hàng
                             </p>
                             {[
-                                { label:"Mã lô",     value:selected.batchcode },
-                                { label:"Sản phẩm",  value:selected.productid },
-                                { label:"Nông trại", value:selected.farmid },
-                                { label:"Số lượng",  value:selected.quantitykg?`${selected.quantitykg}kg`:null },
-                                { label:"Trạng thái",value:STATUS_INFO[selected.status]?.label||selected.status },
-                            ].filter(i=>i.value).map((item,i)=>(
+                                { label:"Mã lô",      value: selected.batchcode },
+                                { label:"Sản phẩm",   value: selected.productid },
+                                { label:"Nông trại",  value: selected.farmid },
+                                { label:"Số lượng",   value: selected.quantitykg ? `${selected.quantitykg}kg` : null },
+                                { label:"Trạng thái", value: STATUS_INFO[selected.status]?.label || selected.status },
+                            ].filter(i => i.value).map((item, i) => (
                                 <div key={i} className="flex justify-between text-xs">
                                     <span style={{ color:'rgba(255,255,255,0.35)' }}>{item.label}</span>
                                     <span className="font-semibold text-white">{item.value}</span>
@@ -242,15 +278,13 @@ export default function QRGenerator() {
 
                         {selected ? (
                             <>
-                                {/* QR image */}
                                 <div className="relative mb-6">
                                     <div className="bg-white p-4 rounded-2xl shadow-2xl"
                                          style={{ boxShadow:'0 0 60px rgba(34,197,94,0.2)' }}>
                                         <img ref={imgRef} src={qrImgUrl} alt="QR Code"
                                              className="w-56 h-56 object-contain"
-                                             onError={e=>e.target.style.display='none'}/>
+                                             onError={e => e.target.style.display = 'none'}/>
                                     </div>
-                                    {/* Center logo */}
                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                         <div className="w-11 h-11 rounded-xl flex items-center justify-center shadow-xl"
                                              style={{ background:'linear-gradient(135deg,#16a34a,#22c55e)', border:'3px solid white' }}>
@@ -259,7 +293,6 @@ export default function QRGenerator() {
                                     </div>
                                 </div>
 
-                                {/* Info */}
                                 <p className="text-lg font-black text-white mb-0.5" style={{ fontFamily:'Syne,sans-serif' }}>
                                     {selected.productid}
                                 </p>
@@ -267,50 +300,34 @@ export default function QRGenerator() {
                                     {selected.batchcode}
                                 </p>
 
-                                {/* URL */}
                                 <div className="w-full max-w-sm mb-5 px-3 py-2 rounded-xl text-xs font-mono truncate text-left"
                                      style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', color:'rgba(255,255,255,0.5)' }}>
                                     {traceUrl}
                                 </div>
 
-                                {/* Phone scan hint */}
                                 <div className="flex items-center gap-2 mb-5 px-3 py-2 rounded-xl w-full max-w-sm"
-                                     style={{ background:
-                                        ENV_PUBLIC_BASE && !useIP ? 'rgba(34,197,94,0.08)' :
-                                        useIP ? 'rgba(34,197,94,0.08)' : 'rgba(251,191,36,0.06)',
-                                        border:`1px solid ${
-                                            ENV_PUBLIC_BASE && !useIP ? 'rgba(34,197,94,0.2)' :
-                                            useIP ? 'rgba(34,197,94,0.2)' : 'rgba(251,191,36,0.15)'}` }}>
-                                    <Smartphone size={13} style={{ color:
-                                        ENV_PUBLIC_BASE && !useIP ? '#4ade80' :
-                                        useIP ? '#4ade80' : '#fbbf24', flexShrink:0 }}/>
-                                    <span className="text-xs" style={{ color:
-                                        ENV_PUBLIC_BASE && !useIP ? '#4ade80' :
-                                        useIP ? '#4ade80' : '#fbbf24' }}>
+                                     style={{ background: ENV_PUBLIC_BASE && !useIP ? 'rgba(34,197,94,0.08)' : useIP ? 'rgba(34,197,94,0.08)' : 'rgba(251,191,36,0.06)',
+                                              border: `1px solid ${ENV_PUBLIC_BASE && !useIP ? 'rgba(34,197,94,0.2)' : useIP ? 'rgba(34,197,94,0.2)' : 'rgba(251,191,36,0.15)'}` }}>
+                                    <Smartphone size={13} style={{ color: ENV_PUBLIC_BASE && !useIP ? '#4ade80' : useIP ? '#4ade80' : '#fbbf24', flexShrink:0 }}/>
+                                    <span className="text-xs" style={{ color: ENV_PUBLIC_BASE && !useIP ? '#4ade80' : useIP ? '#4ade80' : '#fbbf24' }}>
                                         {ENV_PUBLIC_BASE && !useIP
-                                            ? '✓ QR dùng link công khai — mạng ngoài quét được (nếu server đã mở)'
-                                            : useIP
-                                                ? '✓ Điện thoại cùng WiFi scan được'
-                                                : '⚠ Chỉ localhost / cùng máy — bật IP nội bộ hoặc VITE_PUBLIC_APP_URL'}
+                                            ? '✓ QR dùng link công khai — mạng ngoài quét được'
+                                            : useIP ? '✓ Điện thoại cùng WiFi scan được'
+                                            : '⚠ Chỉ localhost / cùng máy — bật IP nội bộ hoặc VITE_PUBLIC_APP_URL'}
                                     </span>
                                 </div>
 
-                                {/* Actions */}
                                 <div className="flex gap-3 w-full max-w-sm">
                                     <button onClick={handleDownload} disabled={downloading}
                                             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60"
                                             style={{ background:'linear-gradient(135deg,#16a34a,#22c55e)', boxShadow:'0 4px 16px rgba(34,197,94,0.35)' }}>
-                                        {downloading
-                                            ? <><RefreshCw size={14} className="animate-spin"/>Đang tải...</>
-                                            : <><Download size={14}/>Tải QR</>
-                                        }
+                                        {downloading ? <><RefreshCw size={14} className="animate-spin"/>Đang tải...</> : <><Download size={14}/>Tải QR</>}
                                     </button>
                                     <button onClick={handleCopy}
                                             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all hover:-translate-y-0.5"
-                                            style={ copying
+                                            style={copying
                                                 ? { background:'rgba(34,197,94,0.12)', border:'1px solid rgba(34,197,94,0.25)', color:'#4ade80' }
-                                                : { background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', color:'rgba(255,255,255,0.6)' }
-                                            }>
+                                                : { background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', color:'rgba(255,255,255,0.6)' }}>
                                         {copying ? <><CheckCircle size={14}/>Đã copy!</> : <><Copy size={14}/>Copy link</>}
                                     </button>
                                 </div>
@@ -329,7 +346,6 @@ export default function QRGenerator() {
                         )}
                     </div>
 
-                    {/* Instructions */}
                     <div className="mt-4 rounded-2xl p-5"
                          style={{ background:'rgba(4,5,16,0.5)', border:'1px solid rgba(255,255,255,0.06)' }}>
                         <p className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color:'rgba(255,255,255,0.25)' }}>
@@ -341,7 +357,7 @@ export default function QRGenerator() {
                                 { step:"2", emoji:"📶", text:"Bật IP nội bộ" },
                                 { step:"3", emoji:"⬇️", text:"Tải QR về" },
                                 { step:"4", emoji:"📱", text:"Scan bằng điện thoại" },
-                            ].map(s=>(
+                            ].map(s => (
                                 <div key={s.step} className="space-y-1.5">
                                     <div className="text-2xl">{s.emoji}</div>
                                     <div className="w-5 h-5 rounded-full mx-auto flex items-center justify-center text-[10px] font-black text-white"
